@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>행성 정복 게임 - Territory Invader</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="game-container">
+        <div class="header">
+            <h1>🚀 Territory Invader</h1>
+            <div class="info">
+                <div class="player-info blue">
+                    <span class="label">플레이어:</span>
+                    <span id="player-planets">0</span> 행성
+                    <span id="player-ships">0</span> 함선
+                </div>
+                <div class="player-info red">
+                    <span class="label">적:</span>
+                    <span id="enemy-planets">0</span> 행성
+                    <span id="enemy-ships">0</span> 함선
+                </div>
+            </div>
+        </div>
+        <canvas id="gameCanvas"></canvas>
+        <div class="instructions">
+            <p>💡 <strong>플레이 방법:</strong></p>
+            <ul>
+                <li>당신의 행성(파란색)을 클릭한 후 적 행성(빨간색)이나 중립 행성(회색)을 클릭하여 공격</li>
+                <li>행성은 시간에 따라 자동으로 함선을 생산합니다</li>
+                <li>함선이 더 많으면 행성을 점령할 수 있습니다</li>
+            </ul>
+        </div>
+    </div>
+    <script src="game.js"></script>
+</body>
+</html>
