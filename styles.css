@@ -1,0 +1,95 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 50%, #1e3c72 100%);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+}
+
+.game-container {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 15px;
+    padding: 20px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.header {
+    text-align: center;
+    margin-bottom: 20px;
+    color: white;
+}
+
+.header h1 {
+    font-size: 2em;
+    margin-bottom: 15px;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.info {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    font-size: 1.1em;
+}
+
+.player-info {
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-weight: bold;
+}
+
+.player-info.blue {
+    background: rgba(52, 152, 219, 0.3);
+    border: 2px solid #3498db;
+}
+
+.player-info.red {
+    background: rgba(231, 76, 60, 0.3);
+    border: 2px solid #e74c3c;
+}
+
+.label {
+    opacity: 0.8;
+    margin-right: 5px;
+}
+
+#gameCanvas {
+    display: block;
+    background: rgba(10, 10, 30, 0.8);
+    border-radius: 10px;
+    box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.5);
+    cursor: crosshair;
+}
+
+.instructions {
+    margin-top: 20px;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 15px;
+    border-radius: 10px;
+    color: white;
+    max-width: 800px;
+}
+
+.instructions p {
+    margin-bottom: 10px;
+    font-size: 1.1em;
+}
+
+.instructions ul {
+    list-style-position: inside;
+    line-height: 1.6;
+}
+
+.instructions li {
+    margin-left: 20px;
+}
