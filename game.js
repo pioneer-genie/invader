@@ -4,10 +4,14 @@ const CONFIG = {
     CANVAS_HEIGHT: 600,
     PLANET_COUNT: 12,
     SHIP_PRODUCTION_RATE: 0.5, // 초당 생산되는 함선 수
+    PLAYER_PRODUCTION_MULTIPLIER: 1.5, // 플레이어 생산 속도 부스트
     SHIP_SPEED: 100, // 픽셀/초
     PLAYER: 1,
     ENEMY: 2,
-    NEUTRAL: 0
+    NEUTRAL: 0,
+    BOOST_COOLDOWN: 30, // 부스트 스킬 쿨다운 (초)
+    BOOST_DURATION: 5, // 부스트 지속 시간 (초)
+    BOOST_MULTIPLIER: 3 // 부스트 시 생산 속도 배율
 };
 
 // 행성 클래스
@@ -17,13 +21,21 @@ class Planet {
         this.y = y;
         this.radius = radius;
         this.owner = owner;
-        this.ships = owner === CONFIG.NEUTRAL ? Math.floor(Math.random() * 30 + 10) : 50;
+        // 플레이어는 100, 적은 30, 중립은 10-30
+        if (owner === CONFIG.PLAYER) {
+            this.ships = 100;
+        } else if (owner === CONFIG.ENEMY) {
+            this.ships = 30;
+        } else {
+            this.ships = Math.floor(Math.random() * 20 + 10);
+        }
         this.productionRate = radius / 15; // 큰 행성일수록 생산 속도 빠름
     }
 
-    produceShips(deltaTime) {
+    produceShips(deltaTime, boostMultiplier = 1) {
         if (this.owner !== CONFIG.NEUTRAL) {
-            this.ships += CONFIG.SHIP_PRODUCTION_RATE * this.productionRate * deltaTime;
+            let multiplier = this.owner === CONFIG.PLAYER ? CONFIG.PLAYER_PRODUCTION_MULTIPLIER : 1;
+            this.ships += CONFIG.SHIP_PRODUCTION_RATE * this.productionRate * deltaTime * multiplier * boostMultiplier;
         }
     }
 
@@ -173,6 +185,21 @@ class Game {
         this.shipGroups = [];
         this.selectedPlanet = null;
         this.lastTime = 0;
+        this.sendAllMode = false; // 전체 보내기 모드
+        this.lastClickTime = 0;
+
+        // 스킬 시스템
+        this.boostCooldown = 0;
+        this.boostActive = false;
+        this.boostTimeLeft = 0;
+
+        // 게임 상태
+        this.gameOver = false;
+        this.gameWon = false;
+        this.combo = 0;
+        this.lastConquerTime = 0;
+        this.startTime = Date.now();
+        this.conqueredPlanets = 0;
 
         this.init();
         this.setupEventListeners();
@@ -211,9 +238,9 @@ class Game {
             if (attempts < 100) {
                 let owner = CONFIG.NEUTRAL;
 
-                // 첫 번째 행성은 플레이어, 두 번째는 적
-                if (i === 0) owner = CONFIG.PLAYER;
-                else if (i === 1) owner = CONFIG.ENEMY;
+                // 처음 2개는 플레이어, 3번째는 적 (플레이어에게 유리)
+                if (i === 0 || i === 1) owner = CONFIG.PLAYER;
+                else if (i === 2) owner = CONFIG.ENEMY;
 
                 this.planets.push(new Planet(x, y, radius, owner));
             }
@@ -222,9 +249,21 @@ class Game {
 
     setupEventListeners() {
         this.canvas.addEventListener('click', (e) => {
+            if (this.gameOver) {
+                this.restart();
+                return;
+            }
+
             const rect = this.canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
+            const currentTime = Date.now();
+
+            // 더블클릭 감지 (300ms 이내)
+            if (currentTime - this.lastClickTime < 300) {
+                this.sendAllMode = !this.sendAllMode;
+            }
+            this.lastClickTime = currentTime;
 
             // 클릭한 행성 찾기
             const clickedPlanet = this.planets.find(p => p.contains(x, y));
@@ -233,7 +272,8 @@ class Game {
                 if (this.selectedPlanet && this.selectedPlanet !== clickedPlanet) {
                     // 선택된 행성에서 클릭한 행성으로 공격
                     if (this.selectedPlanet.owner === CONFIG.PLAYER && this.selectedPlanet.ships >= 1) {
-                        const shipsToSend = Math.floor(this.selectedPlanet.ships * 0.5);
+                        const sendRatio = this.sendAllMode ? 0.9 : 0.5; // 전체 보내기 모드면 90%
+                        const shipsToSend = Math.floor(this.selectedPlanet.ships * sendRatio);
                         if (shipsToSend > 0) {
                             this.sendShips(this.selectedPlanet, clickedPlanet, shipsToSend);
                             this.selectedPlanet.ships -= shipsToSend;
@@ -248,23 +288,87 @@ class Game {
                 this.selectedPlanet = null;
             }
         });
+
+        // 스페이스바로 부스트 스킬 발동
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' && this.boostCooldown <= 0 && !this.gameOver) {
+                this.activateBoost();
+                e.preventDefault();
+            }
+        });
     }
 
     sendShips(from, to, ships) {
         this.shipGroups.push(new ShipGroup(from, to, ships, from.owner));
     }
 
+    activateBoost() {
+        this.boostActive = true;
+        this.boostTimeLeft = CONFIG.BOOST_DURATION;
+        this.boostCooldown = CONFIG.BOOST_COOLDOWN;
+    }
+
+    restart() {
+        this.planets = [];
+        this.shipGroups = [];
+        this.selectedPlanet = null;
+        this.sendAllMode = false;
+        this.boostCooldown = 0;
+        this.boostActive = false;
+        this.boostTimeLeft = 0;
+        this.gameOver = false;
+        this.gameWon = false;
+        this.combo = 0;
+        this.lastConquerTime = 0;
+        this.startTime = Date.now();
+        this.conqueredPlanets = 0;
+        this.init();
+    }
+
     update(deltaTime) {
+        if (this.gameOver) return;
+
+        // 부스트 타이머 업데이트
+        if (this.boostActive) {
+            this.boostTimeLeft -= deltaTime;
+            if (this.boostTimeLeft <= 0) {
+                this.boostActive = false;
+                this.boostTimeLeft = 0;
+            }
+        }
+        if (this.boostCooldown > 0) {
+            this.boostCooldown -= deltaTime;
+        }
+
+        // 콤보 타이머 (5초 내에 점령하지 않으면 리셋)
+        if (Date.now() - this.lastConquerTime > 5000) {
+            this.combo = 0;
+        }
+
         // 행성 함선 생산
+        const boostMultiplier = this.boostActive ? CONFIG.BOOST_MULTIPLIER : 1;
         for (let planet of this.planets) {
-            planet.produceShips(deltaTime);
+            if (planet.owner === CONFIG.PLAYER) {
+                planet.produceShips(deltaTime, boostMultiplier);
+            } else {
+                planet.produceShips(deltaTime);
+            }
         }
 
         // 함선 그룹 이동 및 공격
         for (let i = this.shipGroups.length - 1; i >= 0; i--) {
             const group = this.shipGroups[i];
             if (group.update(deltaTime)) {
+                const oldOwner = group.target.owner;
                 group.attack();
+
+                // 행성 점령 감지 (콤보 카운트)
+                if (oldOwner !== group.owner && group.target.owner === group.owner && group.owner === CONFIG.PLAYER) {
+                    this.combo++;
+                    this.lastConquerTime = Date.now();
+                    this.conqueredPlanets++;
+                }
+
                 this.shipGroups.splice(i, 1);
             }
         }
@@ -272,21 +376,24 @@ class Game {
         // AI 행동
         this.updateAI();
 
+        // 승리/패배 조건 체크
+        this.checkGameOver();
+
         // UI 업데이트
         this.updateUI();
     }
 
     updateAI() {
-        if (Math.random() < 0.02) { // 2% 확률로 AI 행동
-            const enemyPlanets = this.planets.filter(p => p.owner === CONFIG.ENEMY && p.ships > 20);
+        if (Math.random() < 0.01) { // 1% 확률로 AI 행동 (이전 2%에서 감소)
+            const enemyPlanets = this.planets.filter(p => p.owner === CONFIG.ENEMY && p.ships > 30);
             if (enemyPlanets.length === 0) return;
 
             const sourcePlanet = enemyPlanets[Math.floor(Math.random() * enemyPlanets.length)];
 
-            // 타겟 선택 (플레이어 행성 우선, 없으면 중립)
-            const playerPlanets = this.planets.filter(p => p.owner === CONFIG.PLAYER);
+            // 타겟 선택 (중립 행성 우선, 그 다음 플레이어)
             const neutralPlanets = this.planets.filter(p => p.owner === CONFIG.NEUTRAL);
-            const targets = playerPlanets.length > 0 ? playerPlanets : neutralPlanets;
+            const playerPlanets = this.planets.filter(p => p.owner === CONFIG.PLAYER);
+            const targets = neutralPlanets.length > 0 ? neutralPlanets : playerPlanets;
 
             if (targets.length > 0) {
                 // 가장 가까운 약한 타겟 찾기
@@ -299,18 +406,32 @@ class Game {
                     const distance = Math.sqrt(dx * dx + dy * dy);
                     const score = (sourcePlanet.ships - target.ships) / distance;
 
-                    if (score > bestScore && sourcePlanet.ships > target.ships * 1.5) {
+                    // AI가 더 신중하게 공격 (2배 필요)
+                    if (score > bestScore && sourcePlanet.ships > target.ships * 2) {
                         bestScore = score;
                         bestTarget = target;
                     }
                 }
 
                 if (bestTarget) {
-                    const shipsToSend = Math.floor(sourcePlanet.ships * 0.6);
+                    const shipsToSend = Math.floor(sourcePlanet.ships * 0.5);
                     this.sendShips(sourcePlanet, bestTarget, shipsToSend);
                     sourcePlanet.ships -= shipsToSend;
                 }
             }
+        }
+    }
+
+    checkGameOver() {
+        const playerPlanets = this.planets.filter(p => p.owner === CONFIG.PLAYER);
+        const enemyPlanets = this.planets.filter(p => p.owner === CONFIG.ENEMY);
+
+        if (enemyPlanets.length === 0) {
+            this.gameOver = true;
+            this.gameWon = true;
+        } else if (playerPlanets.length === 0) {
+            this.gameOver = true;
+            this.gameWon = false;
         }
     }
 
@@ -365,6 +486,174 @@ class Game {
         for (let group of this.shipGroups) {
             group.draw(this.ctx);
         }
+
+        // UI 요소 그리기
+        this.drawUI();
+
+        // 게임 오버 화면
+        if (this.gameOver) {
+            this.drawGameOver();
+        }
+    }
+
+    drawUI() {
+        const padding = 10;
+
+        // 부스트 스킬 UI (왼쪽 상단)
+        const skillX = padding;
+        const skillY = padding;
+        const skillSize = 60;
+
+        this.ctx.fillStyle = this.boostCooldown > 0 ? 'rgba(100, 100, 100, 0.7)' : 'rgba(46, 204, 113, 0.7)';
+        this.ctx.fillRect(skillX, skillY, skillSize, skillSize);
+        this.ctx.strokeStyle = this.boostActive ? '#f1c40f' : 'white';
+        this.ctx.lineWidth = this.boostActive ? 3 : 2;
+        this.ctx.strokeRect(skillX, skillY, skillSize, skillSize);
+
+        // 부스트 아이콘
+        this.ctx.fillStyle = 'white';
+        this.ctx.font = 'bold 24px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText('⚡', skillX + skillSize / 2, skillY + skillSize / 2 - 5);
+
+        // 쿨다운 표시
+        if (this.boostCooldown > 0) {
+            this.ctx.fillStyle = 'white';
+            this.ctx.font = 'bold 16px Arial';
+            this.ctx.fillText(Math.ceil(this.boostCooldown), skillX + skillSize / 2, skillY + skillSize / 2 + 10);
+        } else if (this.boostActive) {
+            this.ctx.fillStyle = '#f1c40f';
+            this.ctx.font = 'bold 12px Arial';
+            this.ctx.fillText(Math.ceil(this.boostTimeLeft) + 's', skillX + skillSize / 2, skillY + skillSize + 15);
+        }
+
+        // 스페이스바 힌트
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        this.ctx.font = '10px Arial';
+        this.ctx.fillText('SPACE', skillX + skillSize / 2, skillY + skillSize + 25);
+
+        // 전체 보내기 모드 표시 (왼쪽 하단)
+        if (this.sendAllMode) {
+            this.ctx.fillStyle = 'rgba(241, 196, 15, 0.8)';
+            this.ctx.fillRect(padding, CONFIG.CANVAS_HEIGHT - 50, 150, 40);
+            this.ctx.strokeStyle = '#f1c40f';
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeRect(padding, CONFIG.CANVAS_HEIGHT - 50, 150, 40);
+
+            this.ctx.fillStyle = 'white';
+            this.ctx.font = 'bold 14px Arial';
+            this.ctx.textAlign = 'left';
+            this.ctx.fillText('⚔️ 전체 보내기 모드', padding + 10, CONFIG.CANVAS_HEIGHT - 25);
+        }
+
+        // 콤보 표시 (오른쪽 상단)
+        if (this.combo > 1) {
+            const comboX = CONFIG.CANVAS_WIDTH - padding - 100;
+            const comboY = padding;
+
+            this.ctx.fillStyle = 'rgba(231, 76, 60, 0.8)';
+            this.ctx.fillRect(comboX, comboY, 100, 50);
+            this.ctx.strokeStyle = '#e74c3c';
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeRect(comboX, comboY, 100, 50);
+
+            this.ctx.fillStyle = 'white';
+            this.ctx.font = 'bold 24px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText(this.combo + ' COMBO', comboX + 50, comboY + 30);
+        }
+
+        // 진행 상황 바 (상단 중앙)
+        const enemyPlanets = this.planets.filter(p => p.owner === CONFIG.ENEMY);
+        const totalPlanets = this.planets.length;
+        const conqueredCount = totalPlanets - enemyPlanets.length - this.planets.filter(p => p.owner === CONFIG.NEUTRAL).length;
+
+        const barWidth = 200;
+        const barHeight = 25;
+        const barX = CONFIG.CANVAS_WIDTH / 2 - barWidth / 2;
+        const barY = padding;
+
+        // 배경
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        this.ctx.fillRect(barX, barY, barWidth, barHeight);
+
+        // 진행도
+        const progress = conqueredCount / totalPlanets;
+        this.ctx.fillStyle = '#3498db';
+        this.ctx.fillRect(barX, barY, barWidth * progress, barHeight);
+
+        // 테두리
+        this.ctx.strokeStyle = 'white';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(barX, barY, barWidth, barHeight);
+
+        // 텍스트
+        this.ctx.fillStyle = 'white';
+        this.ctx.font = 'bold 12px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText(`${conqueredCount}/${totalPlanets} 행성`, barX + barWidth / 2, barY + barHeight / 2 + 4);
+
+        // 남은 적 행성 수
+        this.ctx.fillStyle = 'rgba(231, 76, 60, 0.8)';
+        this.ctx.font = '12px Arial';
+        this.ctx.fillText(`적 행성: ${enemyPlanets.length}`, barX + barWidth / 2, barY + barHeight + 15);
+    }
+
+    drawGameOver() {
+        // 반투명 오버레이
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        this.ctx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
+
+        const centerX = CONFIG.CANVAS_WIDTH / 2;
+        const centerY = CONFIG.CANVAS_HEIGHT / 2;
+
+        if (this.gameWon) {
+            // 승리 화면
+            this.ctx.fillStyle = '#2ecc71';
+            this.ctx.font = 'bold 60px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText('🎉 승리! 🎉', centerX, centerY - 80);
+
+            // 통계
+            const playTime = Math.floor((Date.now() - this.startTime) / 1000);
+            const minutes = Math.floor(playTime / 60);
+            const seconds = playTime % 60;
+
+            this.ctx.fillStyle = 'white';
+            this.ctx.font = '24px Arial';
+            this.ctx.fillText(`플레이 시간: ${minutes}분 ${seconds}초`, centerX, centerY - 10);
+            this.ctx.fillText(`점령한 행성: ${this.conqueredPlanets}개`, centerX, centerY + 30);
+            this.ctx.fillText(`최고 콤보: ${this.combo > 0 ? this.combo : 1}`, centerX, centerY + 70);
+
+            // 평가 메시지
+            let message = '훌륭합니다!';
+            if (playTime < 60) message = '⚡ 번개같은 승리!';
+            else if (playTime < 120) message = '✨ 빠른 승리!';
+            else if (this.combo >= 5) message = '🔥 완벽한 연속 공격!';
+
+            this.ctx.fillStyle = '#f1c40f';
+            this.ctx.font = 'bold 20px Arial';
+            this.ctx.fillText(message, centerX, centerY + 110);
+        } else {
+            // 패배 화면
+            this.ctx.fillStyle = '#e74c3c';
+            this.ctx.font = 'bold 60px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText('패배...', centerX, centerY - 60);
+
+            this.ctx.fillStyle = 'white';
+            this.ctx.font = '24px Arial';
+            this.ctx.fillText('포기하지 마세요!', centerX, centerY);
+            this.ctx.fillText(`점령한 행성: ${this.conqueredPlanets}개`, centerX, centerY + 40);
+        }
+
+        // 재시작 안내
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        this.ctx.font = '20px Arial';
+        this.ctx.fillText('클릭하여 다시 시작', centerX, CONFIG.CANVAS_HEIGHT - 50);
     }
 
     gameLoop(timestamp = 0) {
